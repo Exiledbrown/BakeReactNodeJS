@@ -10,9 +10,9 @@ node_modules/
 build/
 dist/
 
-# Base de datos (no subir dumps locales, pero puedes subir el esquema SQL si es público)
+# Base de datos
 *.sql
-baketrack.sql  // Tu dump SQL, pero guárdalo localmente en XAMPP
+baketrack.sql
 
 # IDE
 .vscode/settings.json
