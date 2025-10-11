@@ -9,6 +9,7 @@ require('dotenv').config();
 // Crear app Express
 const app = express();
 const PORT = process.env.PORT || 5000;
+const USE_HASH = process.env.USE_HASH === 'true';  // Toggle: true = hash, false = plano
 
 // Configurar middleware para JSON y CORS
 app.use(express.json());
@@ -44,18 +45,46 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Ruta POST para login con username/password
+// Ruta POST para login con username/password (plano o hash)
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   db.query('SELECT * FROM users WHERE username = ?', [username], async (err, results) => {
     if (err || results.length === 0) return res.status(400).json({ error: 'Usuario no encontrado' });
 
     const user = results[0];
-    const isValid = await bcrypt.compare(password, user.password);
+    let isValid;
+    if (USE_HASH) {
+      isValid = await bcrypt.compare(password, user.password);
+    } else {
+      isValid = password === user.password;  // Comparación plana para dev/prod simple
+    }
     if (!isValid) return res.status(400).json({ error: 'Contraseña incorrecta' });
 
     const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token, role: user.role, username: user.username });
+  });
+});
+
+// Ruta POST para registro de nuevo usuario (plano o hash)
+app.post('/api/register', async (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password || !role) return res.status(400).json({ error: 'Faltan campos requeridos' });
+
+  // Verificar si usuario ya existe
+  db.query('SELECT * FROM users WHERE username = ?', [username], async (err, results) => {
+    if (err) return res.status(500).json({ error: err });
+    if (results.length > 0) return res.status(400).json({ error: 'Usuario ya existe' });
+
+    let hashedPassword = password;
+    if (USE_HASH) {
+      hashedPassword = await bcrypt.hash(password, 10);  // Hash solo si toggle true
+    }
+
+    // Insertar nuevo usuario
+    db.query('INSERT INTO users (username, password, role, created_at) VALUES (?, ?, ?, NOW())', [username, hashedPassword, role], (err, result) => {
+      if (err) return res.status(500).json({ error: err });
+      res.status(201).json({ message: 'Usuario creado exitosamente', userId: result.insertId });
+    });
   });
 });
 
@@ -97,5 +126,5 @@ app.get('/api/orders/:id/details', authenticateToken, (req, res) => {
 
 // Iniciar servidor en puerto configurado
 app.listen(PORT, () => {
-  console.log(`Servidor en puerto ${PORT}`);
+  console.log(`Servidor en puerto ${PORT} (Hash: ${USE_HASH ? 'Sí' : 'No'})`);
 });
